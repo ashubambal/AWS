@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Two-Tier Web Application
+
+Parameters:
+  KeyName:
+    Type: String
+    Description: Name of the EC2 Key Pair for SSH access
+    Default: docker-key
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: ID of the Amazon Machine Image (AMI)
+
+Resources:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref ImageId
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref WebAppSG
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt-get update -y
+          sudo apt-get install nginx -y
+          systemctl enable nginx
+          systemctl start nginx
+          echo "Hello from Ashutosh" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: WebServer
+
+  WebAppSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: WebApp Security Group
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22 
+
+  WebDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      EngineVersion: "8.0"
+      DBInstanceClass: db.t2.micro
+      AllocatedStorage: "20"
+      MasterUsername: admin
+      MasterUserPassword: adminadmin
+      DBName: webdatabase
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageType: gp3
+      VPCSecurityGroups:
+        - !GetAtt DatabaseSG.GroupId
+      Tags:
+        - Key: Name
+          Value: MyDatabase
+
+  DatabaseSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Database Security Group
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !GetAtt WebAppSG.GroupId
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+
+Outputs:
+  WebServerURL:
+    Description: Front-End Instance URL
+    Value: !Sub http://${WebServer.PublicIp}
